@@ -14,6 +14,11 @@
 ./gradlew bootRun
 ```
 
+## 테스트
+```bash
+./gradlew test
+```
+
 ## 접속 정보
 - 서버: `http://localhost:8080`
 - 헬스체크: `GET /health`
