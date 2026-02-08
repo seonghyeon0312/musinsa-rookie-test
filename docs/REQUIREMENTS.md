@@ -40,6 +40,7 @@ Optional<Student> findByIdWithLock(@Param("id") Long id);
 
 ### 검증 결과
 - **정원 1명, 동시 요청 100명 -> 정확히 1명만 성공** (테스트 통과)
+- **동일 학생 동시 신청 직렬화**: 학생 행 비관적 락으로 학점/시간 충돌 계산이 원자적으로 보장됨 (테스트 추가 예정, 충돌 시 1성공/1실패 시나리오 설계)
 
 ---
 
@@ -47,7 +48,7 @@ Optional<Student> findByIdWithLock(@Param("id") Long id);
 
 ### 테이블 설계
 - `CourseSchedule` 별도 테이블로 분리
-- 하나의 강좌가 여러 시간대를 가질 수 있음 (예: 월수 09:00-10:30)
+- 하나의 강좌가 여러 시간대를 가질 수 있음 (예: 월 09:00-10:30, 수 10:00-11:30)
 
 ### 요일/시간 표현 방식
 - 요일: `DayOfWeek` enum (`MON`, `TUE`, `WED`, `THU`, `FRI`)
@@ -94,8 +95,19 @@ Optional<Student> findByIdWithLock(@Param("id") Long id);
 |------|------|-----------|
 | 정원 초과 방지 | enrolled >= capacity일 때 거부 | 409 Conflict |
 | 중복 수강 방지 | 동일 학생-강좌 조합 거부 | 409 Conflict |
-| 학점 제한 | 최대 18학점 초과 시 거부 | 400 Bad Request |
+| 학점 제한 | 현재학점 + 신청학점 > 18일 때 거부 (즉 18까지 허용, 19부터 거부) | 400 Bad Request |
 | 시간표 충돌 | 기존 수강 강좌와 시간 겹침 시 거부 | 409 Conflict |
+| 0학점 과목 | 허용 (세미나 등), 학점 계산에 0 반영 | 200 OK |
+
+### 정렬 파라미터 보정 규칙
+- 지원 컬럼: 학생 `id, studentNumber, name, grade` / 교수 `id, name`
+- `sort=DESC/ASC`처럼 컬럼 없이 온 경우 `id` 기준으로 보정
+- 미허용 컬럼이면 `id ASC`로 강제
+- API 문서와 Swagger에 동일 규칙을 명시
+- 정
+
+### API 에러 문서화
+- Swagger에 200/404 예시 추가(학생 단건 조회). 다른 엔드포인트에도 동일 패턴(404/409/400)을 순차 적용 예정.
 
 ---
 
@@ -109,3 +121,9 @@ Optional<Student> findByIdWithLock(@Param("id") Long id);
 | ORM | Spring Data JPA + Hibernate | - |
 | API 문서 | springdoc-openapi (Swagger UI) | 3.0.1 |
 | 빌드 | Gradle | 9.3.0 |
+
+---
+
+## 6. 테스트 커버리지 메모
+- 단일/동시 수강신청 성공, 정원 초과, 중복 신청, 학점 초과, 시간 충돌, 취소 후 재신청, 존재하지 않는 ID 시나리오 검증
+- 추가 커버: 다른 요일 동일 시간대 성공, 학점 경계(0학점 추가 허용), 수강신청 ID 중복 취소 실패, 동일 학생 동시 신청 시 충돌 검증(시나리오 조정 예정)

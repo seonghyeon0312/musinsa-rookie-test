@@ -223,7 +223,15 @@ OK
 |------|------|------|--------|------|
 | page | number | 아니오 | 0 | 페이지 번호 |
 | size | number | 아니오 | 20 | 페이지 크기 |
-| sort | string | 아니오 | id,asc | 정렬 |
+| sort | string | 아니오 | id,asc | 정렬 (예: `id,desc`)<br>방향만 전달한 경우(`sort=DESC/ASC`)에는 `id` 컬럼을 기준으로 정렬 |
+
+- 허용 정렬 컬럼: `id`, `studentNumber`, `name`, `grade`  
+- 잘못된 컬럼이 들어오면 `id ASC`로 자동 보정됨.
+
+**요청 예시**
+- `/students?page=0&size=20&sort=id,desc`
+- `/students?page=0&size=20&sort=grade,ASC`
+- `/students?sort=DESC` → `id DESC`로 처리
 
 **성공 (200)**:
 ```json
@@ -282,7 +290,15 @@ OK
 |------|------|------|--------|------|
 | page | number | 아니오 | 0 | 페이지 번호 |
 | size | number | 아니오 | 20 | 페이지 크기 |
-| sort | string | 아니오 | id,asc | 정렬 |
+| sort | string | 아니오 | id,asc | 정렬 (예: `id,desc`)<br>방향만 전달한 경우(`sort=DESC/ASC`)에는 `id` 컬럼을 기준으로 정렬 |
+
+- 허용 정렬 컬럼: `id`, `name`  
+- 잘못된 컬럼이 들어오면 `id ASC`로 자동 보정됨.
+
+**요청 예시**
+- `/professors?page=0&size=20&sort=name,asc`
+- `/professors?page=0&size=20&sort=id,DESC`
+- `/professors?sort=DESC` → `id DESC`로 처리
 
 **성공 (200)**:
 ```json
