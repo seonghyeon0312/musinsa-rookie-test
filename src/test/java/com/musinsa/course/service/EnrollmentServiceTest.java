@@ -11,8 +11,11 @@ import com.musinsa.course.domain.Professor;
 import com.musinsa.course.domain.Student;
 import com.musinsa.course.dto.EnrollmentResponse;
 import com.musinsa.course.exception.CapacityExceededException;
+import com.musinsa.course.exception.CourseNotFoundException;
 import com.musinsa.course.exception.CreditLimitExceededException;
 import com.musinsa.course.exception.DuplicateEnrollmentException;
+import com.musinsa.course.exception.EnrollmentNotFoundException;
+import com.musinsa.course.exception.StudentNotFoundException;
 import com.musinsa.course.exception.TimeConflictException;
 import com.musinsa.course.repository.CourseRepository;
 import com.musinsa.course.repository.CourseScheduleRepository;
@@ -131,7 +134,7 @@ class EnrollmentServiceTest {
 
         assertThatThrownBy(() -> enrollmentService.enroll(student.getId(), course2.getId()))
                 .isInstanceOf(TimeConflictException.class)
-                .hasMessageContaining("시간이 겹");
+                .hasMessageContaining("시간이 겹칩니다");
     }
 
     @Test
@@ -149,6 +152,89 @@ class EnrollmentServiceTest {
         EnrollmentResponse response2 = enrollmentService.enroll(student.getId(), course.getId());
         assertThat(response2).isNotNull();
         assertThat(courseRepository.findById(course.getId()).orElseThrow().getEnrolled()).isEqualTo(1);
+    }
+
+    @Test
+    void 존재하지_않는_학생ID로_수강신청시_실패() {
+        Course course = createCourse("자료구조", "CS030", 3, 30, DayOfWeek.MON, LocalTime.of(9, 0));
+
+        assertThatThrownBy(() -> enrollmentService.enroll(99999L, course.getId()))
+                .isInstanceOf(StudentNotFoundException.class)
+                .hasMessageContaining("학생을 찾을 수 없습니다");
+    }
+
+    @Test
+    void 존재하지_않는_강좌ID로_수강신청시_실패() {
+        assertThatThrownBy(() -> enrollmentService.enroll(student.getId(), 99999L))
+                .isInstanceOf(CourseNotFoundException.class)
+                .hasMessageContaining("강좌를 찾을 수 없습니다");
+    }
+
+    @Test
+    void 존재하지_않는_수강신청ID로_취소시_실패() {
+        assertThatThrownBy(() -> enrollmentService.cancel(99999L))
+                .isInstanceOf(EnrollmentNotFoundException.class)
+                .hasMessageContaining("수강신청 내역을 찾을 수 없습니다");
+    }
+
+    @Test
+    void 부분적으로_시간이_겹치는_강좌_수강신청시_실패() {
+        // 09:00-10:30 강좌 신청
+        Course course1 = createCourse("자료구조", "CS040", 3, 30, DayOfWeek.MON, LocalTime.of(9, 0));
+        enrollmentService.enroll(student.getId(), course1.getId());
+
+        // 10:00-11:30 강좌 신청 시도 (30분 겹침)
+        Course course2 = createCourse("알고리즘", "CS041", 3, 30, DayOfWeek.MON, LocalTime.of(10, 0));
+
+        assertThatThrownBy(() -> enrollmentService.enroll(student.getId(), course2.getId()))
+                .isInstanceOf(TimeConflictException.class)
+                .hasMessageContaining("시간이 겹칩니다");
+    }
+
+    @Test
+    void 시간대만_같고_요일은_다르면_성공() {
+        // 월 09:00-10:30
+        Course course1 = createCourse("자료구조", "CS050", 3, 30, DayOfWeek.MON, LocalTime.of(9, 0));
+        enrollmentService.enroll(student.getId(), course1.getId());
+
+        // 화 09:00-10:30 (요일만 다름)
+        Course course2 = createCourse("알고리즘", "CS051", 3, 30, DayOfWeek.TUE, LocalTime.of(9, 0));
+
+        EnrollmentResponse response = enrollmentService.enroll(student.getId(), course2.getId());
+        assertThat(response).isNotNull();
+    }
+
+    @Test
+    void 학점_경계값_18학점에서_0학점_추가는_성공하고_1학점은_실패() {
+        // 17학점까지 채우기 (3학점*5 + 2학점*1 = 17)
+        for (int i = 0; i < 5; i++) {
+            Course course = createCourse("과목A" + i, "CR1" + i, 3, 30,
+                    DayOfWeek.values()[i % 5], LocalTime.of(8 + i, 0));
+            enrollmentService.enroll(student.getId(), course.getId());
+        }
+        Course twoCredit = createCourse("과목B", "CR200", 3, 30, DayOfWeek.FRI, LocalTime.of(14, 0));
+        enrollmentService.enroll(student.getId(), twoCredit.getId()); // 총 17학점
+
+        // 0학점 강좌 가정 (세미나) -> 성공
+        Course zeroCredit = createCourse("세미나", "CR201", 0, 10, DayOfWeek.MON, LocalTime.of(18, 0));
+        EnrollmentResponse ok = enrollmentService.enroll(student.getId(), zeroCredit.getId());
+        assertThat(ok).isNotNull();
+
+        // 1학점 추가 -> 18을 넘기므로 실패
+        Course oneCredit = createCourse("추가", "CR202", 1, 30, DayOfWeek.THU, LocalTime.of(19, 0));
+        assertThatThrownBy(() -> enrollmentService.enroll(student.getId(), oneCredit.getId()))
+                .isInstanceOf(CreditLimitExceededException.class);
+    }
+
+    @Test
+    void 수강신청_ID_중복_취소시_실패() {
+        Course course = createCourse("DB", "CS060", 3, 10, DayOfWeek.MON, LocalTime.of(11, 0));
+        EnrollmentResponse resp = enrollmentService.enroll(student.getId(), course.getId());
+
+        enrollmentService.cancel(resp.getId());
+
+        assertThatThrownBy(() -> enrollmentService.cancel(resp.getId()))
+                .isInstanceOf(EnrollmentNotFoundException.class);
     }
 
     private Course createCourse(String name, String code, int credits, int capacity,

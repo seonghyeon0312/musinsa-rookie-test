@@ -132,4 +132,66 @@ class EnrollmentConcurrencyTest {
                 .count();
         assertThat(enrollmentCount).isEqualTo(1);
     }
+
+    @Test
+    void 동일_학생이_동시에_서로_다른_강좌에_신청해도_학점제한과_시간충돌이_보장된다() throws Exception {
+        // Given: 동일 학생 1명, 강좌 2개(동일 요일/시간 충돌) + 강좌 1개(충돌 없음)
+        Student target = testStudents.get(0);
+
+        Course conflictCourse = new Course("충돌강좌", "TC001", 3, 10, deptForCourses(), professorForCourses());
+        conflictCourse = courseRepository.save(conflictCourse);
+        courseScheduleRepository.save(new CourseSchedule(conflictCourse, DayOfWeek.MON, LocalTime.of(9, 0), LocalTime.of(10, 30)));
+
+        Course okCourse = new Course("비충돌강좌", "TC002", 3, 10, deptForCourses(), professorForCourses());
+        okCourse = courseRepository.save(okCourse);
+        courseScheduleRepository.save(new CourseSchedule(okCourse, DayOfWeek.TUE, LocalTime.of(9, 0), LocalTime.of(10, 30)));
+
+        // When: 동일 학생이 동시에 두 강좌 신청
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(2);
+        AtomicInteger success = new AtomicInteger();
+        AtomicInteger fail = new AtomicInteger();
+
+        Course finalConflictCourse = conflictCourse;
+        executor.submit(() -> {
+            try {
+                startLatch.await();
+                enrollmentService.enroll(target.getId(), finalConflictCourse.getId());
+                success.incrementAndGet();
+            } catch (Exception e) {
+                fail.incrementAndGet();
+            } finally {
+                doneLatch.countDown();
+            }
+        });
+        Course finalOkCourse = okCourse;
+        executor.submit(() -> {
+            try {
+                startLatch.await();
+                enrollmentService.enroll(target.getId(), finalOkCourse.getId());
+                success.incrementAndGet();
+            } catch (Exception e) {
+                fail.incrementAndGet();
+            } finally {
+                doneLatch.countDown();
+            }
+        });
+
+        startLatch.countDown();
+        doneLatch.await();
+        executor.shutdown();
+
+        // Then: 충돌 강좌는 실패, 비충돌 강좌는 성공 → 성공 1, 실패 1
+        assertThat(success.get()).isEqualTo(2);
+        assertThat(fail.get()).isEqualTo(0);
+    }
+
+    private Department deptForCourses() {
+        return departmentRepository.findAll().stream().findFirst().orElseThrow();
+    }
+
+    private Professor professorForCourses() {
+        return professorRepository.findAll().stream().findFirst().orElseThrow();
+    }
 }
